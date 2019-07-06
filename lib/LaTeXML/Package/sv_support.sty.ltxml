@@ -16,8 +16,9 @@ use warnings;
 use LaTeXML::Package;
 
 # Only if option natbib!
-RequirePackage('natbib');
+# RequirePackage('natbib');
 RequirePackage('inst_support');
+RequirePackage('bst_support');
 
 #======================================================================
 # Frontmatter

@@ -3457,6 +3457,10 @@ sub beginBibliography_clean {
   $whatsit->setProperty(titlefont => $title->getFont) if $title;
   $whatsit->setProperty(bibstyle  => LookupValue('BIBSTYLE'));
   $whatsit->setProperty(citestyle => LookupValue('CITE_STYLE'));
+  $whatsit->setProperty(sort => LookupValue('SORT_STYLE'));
+
+
+
   #  $whatsit->setProperty(sort=> ???
   # And prepare for the likely nonsense that appears within bibliographies
   ResetCounter('enumiv');
@@ -3545,7 +3549,8 @@ DefConstructor('\bibstyle{}', sub {
     my $style = ToString($_[1]->getArg(1));
     AssignValue(BIBSTYLE => $style, 'global');
     if (my $parms = $$BIBSTYLES{$style}) {
-      AssignValue(CITE_STYLE => $$parms{citestyle}); }
+      AssignValue(CITE_STYLE => $$parms{citestyle});
+      AssignValue(SORT_STYLE => $$parms{sort}); }
     else {
       Info('unexpected', $style, $_[0], "Unknown bibstyle '$style', it will be ignored"); }
     return; });

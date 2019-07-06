@@ -42,6 +42,22 @@ sub toProcess {
   my ($self, $doc) = @_;
   return $doc->findnodes('//ltx:bibliography'); }
 
+sub parseAuxFile {
+  my ($self, $doc) = @_;
+  my $auxfile = $doc->getDestination();
+  my %refnum;
+
+  # replace extension by .aux
+  $auxfile =~ s/\.\w+?$/.aux/;
+  if (open(FILE, $auxfile)) {
+    while(<FILE>) {
+        if (/^\\bibcite/) {
+            /(\\bibcite)\{(.*)\}\{{1,2}(\d+)\}/;
+            # $ref[$3] = $2;
+            $refnum{$2} = $3; } } }
+  return %refnum; }
+
+
 # Whooo, this is turning into a confusing API!
 # Potentially multiple biblist's in each document
 # potentially each one split into multiple output documents (need that option!)
@@ -56,7 +72,20 @@ sub process {
     local %LaTeXML::Post::MakeBibliography::STYLE =
       (map { ($_ => $bib->getAttribute($_)) } qw(bibstyle citestyle sort));
 
-    my $entries = $self->getBibEntries($doc, $bib);
+    NoteProgress("bibstyle: ".$LaTeXML::Post::MakeBibliography::STYLE{bibstyle}."\n");
+    NoteProgress("citestyle: ".$LaTeXML::Post::MakeBibliography::STYLE{citestyle}."\n");
+    NoteProgress("sort     : ".$LaTeXML::Post::MakeBibliography::STYLE{sort}."\n");
+
+    my %auxRefs = ();
+    if (1 || $LaTeXML::Post::MakeBibliography::STYLE{sort} eq 'false') {
+        # Try to sort entries according to aux file
+        Info('expected', $bib, $self, "Sorting entries according to aux file.");
+
+  	%auxRefs = $self->parseAuxFile($doc);
+  	if (!keys %auxRefs) {
+    	    Info('expected', $bib, $self, "Could not parse .aux file, falling back to auto-numbering"); } }
+
+    my $entries = $self->getBibEntries($doc, $bib, %auxRefs);
     # Remove any bibentry's (these should have been converted to bibitems)
     $doc->removeNodes($doc->findnodes('//ltx:bibentry'));
     foreach my $biblist ($doc->findnodes('//ltx:biblist')) {
@@ -70,10 +99,10 @@ sub process {
         $$split{ $$entry{initial} }{$sortkey} = $entry; }
       @docs = map { $self->rescan($_) }
         $self->makeSubCollectionDocuments($doc, $bib,
-        map { ($_ => $self->makeBibliographyList($doc, $bib, $_, $$split{$_})) }
+        map { ($_ => $self->makeBibliographyList($doc, $bib, $_, $$split{$_}, %auxRefs)) }
           sort keys %$split); }
     else {
-      $doc->addNodes($bib, $self->makeBibliographyList($doc, $bib, undef, $entries));
+      $doc->addNodes($bib, $self->makeBibliographyList($doc, $bib, undef, $entries, %auxRefs));
       #      @docs = ($self->rescan($doc)); }
       $self->rescan($doc); } }
   return @docs; }
@@ -226,7 +255,10 @@ sub convertBibliography {
 # those bibitems which have been referenced by bibref's for that same list!
 # [Unfortunately, the logic is a bit screwy here]
 sub getBibEntries {
-  my ($self, $doc, $bib) = @_;
+  my ($self, $doc, $bib, %auxRefs) = @_;
+  my $useAuxRefs = 0;
+  if (keys %auxRefs) {
+    $useAuxRefs = 1; }
 
   # First, scan the bib files for all ltx:bibentry's, (hash key is bibkey)
   # Also, record the citations from each bibentry to others.
@@ -303,7 +335,15 @@ sub getBibEntries {
       $$entry{ay}      = "$names.$date";
       $$entry{initial} = $doc->initial($names, 1);
       # Include this entry keyed using a sortkey.
-      $$included{ lc(join('.', $sortnames, $date, $title, $bibkey)) } = $entry;
+      my $sortstring;
+      if ($useAuxRefs) {
+        # the unnormalized key is needed
+        my $key = $bibentry->getAttribute('key');
+        $sortstring = sprintf("%06d", $auxRefs{$key});
+      } else {
+        $sortstring = lc(join('.', $sortnames, $date, $title, $bibkey));
+      }
+      $$included{ $sortstring } = $entry;
       # And, since we're including this entry, we'll need to include any that it cites!
       push(@queue, @{ $$entry{citations} }) if $$entry{citations}; }
     else {
@@ -356,19 +396,19 @@ sub getNameText {
 # Convert hash of bibentry(s) into biblist of bibitem(s)
 
 sub makeBibliographyList {
-  my ($self, $doc, $bib, $initial, $entries) = @_;
+  my ($self, $doc, $bib, $initial, $entries, %auxRefs) = @_;
   my $id = $bib->getAttribute('xml:id')
     || $doc->getDocumentElement->getAttribute('xml:id') || 'bib';
   $id .= ".L1";
   $id .= ".$initial" if $initial;
   return ['ltx:biblist', { 'xml:id' => $id },
-    map { $self->formatBibEntry($doc, $bib, $$entries{$_}) } $doc->unisort(keys %$entries)]; }
+    map { $self->formatBibEntry($doc, $bib, $$entries{$_}, %auxRefs) } $doc->unisort(keys %$entries)]; }
 
 # ================================================================================
 # NOTE: With multiple bibliographies, the ID of the bibentry isn't necessarily
 # the ID in the "local" bibliography! (ie. bibentry can be repeated in the document!)
 sub formatBibEntry {
-  my ($self, $doc, $bib, $entry) = @_;
+  my ($self, $doc, $bib, $entry, %auxRefs) = @_;
   my $bibentry   = $$entry{bibentry};
   my $id         = $bibentry->getAttribute('xml:id');
   my $key        = $bibentry->getAttribute('key');
@@ -381,7 +421,15 @@ sub formatBibEntry {
     $id =~ s/^bib//; $id = $bibid . $id; }
 
   local $LaTeXML::Post::MakeBibliography::SUFFIX = $$entry{suffix};
-  my $number = ++$LaTeXML::Post::MakeBibliography::NUMBER;
+
+  my $number;
+  if (keys %auxRefs) {
+    $number = $auxRefs{$key};
+  } else {
+    $number = ++$LaTeXML::Post::MakeBibliography::NUMBER;
+  }
+
+  print $key.":".$number."\n";
 
   Warn('unexpected', $type, undef,
     "No formatting specification for bibentry of type '$type'") unless @blockspecs;
@@ -446,6 +494,8 @@ sub formatBibEntry {
   # AND OF COURSE, we need to know the key before we know the suffix!!!
   my $style = $LaTeXML::Post::MakeBibliography::STYLE{citestyle} || 'numbers';
   $style = 'numbers' unless (@names || $keytag) && (@year || $typetag);
+  ## HST
+  $style = 'numbers';
   if ($style eq 'numbers') {
     push(@tags, ['ltx:tag', { role => 'refnum', class => 'ltx_bib_key', open => '[', close => ']' }, $number]); }
   elsif ($style eq 'AY') {
@@ -777,6 +827,7 @@ $FMT_SPEC{'proceedings.article'} = $FMT_SPEC{incollection};
 $FMT_SPEC{inproceedings}         = $FMT_SPEC{incollection};
 $FMT_SPEC{inbook}                = $FMT_SPEC{incollection};
 $FMT_SPEC{techreport}            = $FMT_SPEC{report};
+$FMT_SPEC{rfc}                   = $FMT_SPEC{report};
 
 #}
 
