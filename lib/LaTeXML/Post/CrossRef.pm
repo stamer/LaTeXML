@@ -33,6 +33,7 @@ sub new {
   $$self{min_ref_length} = (defined $options{min_ref_length} ? $options{min_ref_length} : 1);
   $$self{ref_join} = (defined $options{ref_join} ? $options{ref_join} : " \x{2023} "); # or " in " or ... ?
   $$self{navigation_toc} = $options{navigation_toc};
+  $$self{parseauxfile}   = $options{parseauxfile};
   return $self; }
 
 sub process {
@@ -415,6 +416,12 @@ sub make_bibcite {
     $show = 'refnum'; }
   if ($show eq 'nothing') {    # Ad Hoc support for \nocite!t
     return (); }
+
+  if ($$self{parseauxfile}) {
+    Info("Parsing auxfile => setting show to refnum!");
+    # ignore any options set by natbib.sty.ltxml, we use the data from aux directly
+    $show = 'refnum'; }
+
   my $sep   = $bibref->getAttribute('separator')   || ',';
   my $yysep = $bibref->getAttribute('yyseparator') || ',';
   my @phrases = element_nodes($bibref);    # get the ltx;bibrefphrase's in the bibref!

@@ -36,6 +36,7 @@ sub new {
   my $self = $class->SUPER::new(%options);
   $$self{split}          = $options{split};
   $$self{bibliographies} = $options{bibliographies};
+  $$self{parseauxfile}   = $options{parseauxfile};
   return $self; }
 
 sub toProcess {
@@ -44,17 +45,23 @@ sub toProcess {
 
 sub parseAuxFile {
   my ($self, $doc) = @_;
-  my $auxfile = $doc->getDestination();
+  # there does not seem to be a safe way to get to the original
+  # texfile, so just assume that only the suffix has been replaced or added.
+  my $auxfile = $doc->getSource();
   my %refnum;
 
-  # replace extension by .aux
-  $auxfile =~ s/\.\w+?$/.aux/;
-  if (open(FILE, $auxfile)) {
+  # replace paper.tex or paper.tex.xml by paper.aux
+  $auxfile =~ s/\..+$/.aux/;
+  if (!open(FILE, $auxfile)) {
+    Info("Failed to open AUX file " . $auxfile);
+  } else {
+    Info("Parsing AUX file: " . $auxfile);
     while(<FILE>) {
         if (/^\\bibcite/) {
-            /(\\bibcite)\{(.*)\}\{{1,2}(\d+)\}/;
-            # $ref[$3] = $2;
-            $refnum{$2} = $3; } } }
+            /(\\bibcite)\{(.*)\}\{{1,2}([\)\(\w]+)\}/;
+            $refnum{$2} = $3; } }
+    close FILE; }
+
   return %refnum; }
 
 
@@ -77,13 +84,11 @@ sub process {
     NoteProgress("sort     : ".$LaTeXML::Post::MakeBibliography::STYLE{sort}."\n");
 
     my %auxRefs = ();
-    if (1 || $LaTeXML::Post::MakeBibliography::STYLE{sort} eq 'false') {
-        # Try to sort entries according to aux file
-        Info('expected', $bib, $self, "Sorting entries according to aux file.");
-
-  	%auxRefs = $self->parseAuxFile($doc);
-  	if (!keys %auxRefs) {
-    	    Info('expected', $bib, $self, "Could not parse .aux file, falling back to auto-numbering"); } }
+    if ($$self{parseauxfile}) {
+      Info("Sorting and formatting entries according to aux file.");
+      %auxRefs = $self->parseAuxFile($doc);
+      if (!keys %auxRefs) {
+        Info("Could not parse .aux file, falling back to auto-numbering"); } }
 
     my $entries = $self->getBibEntries($doc, $bib, %auxRefs);
     # Remove any bibentry's (these should have been converted to bibitems)
@@ -339,7 +344,13 @@ sub getBibEntries {
       if ($useAuxRefs) {
         # the unnormalized key is needed
         my $key = $bibentry->getAttribute('key');
-        $sortstring = sprintf("%06d", $auxRefs{$key});
+        $_ = $auxRefs{$key};
+        if (/\D/) {
+            $sortstring = sprintf("%s", $auxRefs{$key});
+        } else {
+            # sort purely numerically
+            $sortstring = sprintf("%06d", $auxRefs{$key});
+        }
       } else {
         $sortstring = lc(join('.', $sortnames, $date, $title, $bibkey));
       }
@@ -424,12 +435,11 @@ sub formatBibEntry {
 
   my $number;
   if (keys %auxRefs) {
+    # this may actually be a alphanumerical entry
     $number = $auxRefs{$key};
   } else {
     $number = ++$LaTeXML::Post::MakeBibliography::NUMBER;
   }
-
-  print $key.":".$number."\n";
 
   Warn('unexpected', $type, undef,
     "No formatting specification for bibentry of type '$type'") unless @blockspecs;
@@ -494,9 +504,7 @@ sub formatBibEntry {
   # AND OF COURSE, we need to know the key before we know the suffix!!!
   my $style = $LaTeXML::Post::MakeBibliography::STYLE{citestyle} || 'numbers';
   $style = 'numbers' unless (@names || $keytag) && (@year || $typetag);
-  ## HST
-  $style = 'numbers';
-  if ($style eq 'numbers') {
+  if ($style eq 'numbers' || keys %auxRefs) {
     push(@tags, ['ltx:tag', { role => 'refnum', class => 'ltx_bib_key', open => '[', close => ']' }, $number]); }
   elsif ($style eq 'AY') {
     my @rfnames;
