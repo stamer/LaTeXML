@@ -43,7 +43,7 @@ my ($navtoc) = (undef);
 my %navtocstyles = (context => 1, normal => 1, none => 1);
 my ($prescan, $dbfile, $scan, $crossref, $sitedir, $resourcedir) = (undef, undef, 1, 1, undef, undef);
 my ($index, $permutedindex, $splitindex) = (1, undef, undef);
-my ($bibliography, $splitbibliography, @bibliographies) = (1, undef);
+my ($bibliography, $splitbibliography, $parseauxfile, @bibliographies) = (1, undef, undef);
 my ($timestamp)          = (undef);
 my @math_formats         = ();
 my %removed_math_formats = ();
@@ -119,6 +119,7 @@ GetOptions("quiet" => sub { $verbosity--; },
   "bibliography=s"     => \@bibliographies,
   "nobibliography"     => sub { $bibliography = 0; },
   "splitbibliography!" => \$splitbibliography,
+  "parseauxfile"       => \$parseauxfile,
   # Options for two phase processing
   "prescan"             => \$prescan,
   "dbfile=s"            => \$dbfile,
@@ -352,6 +353,7 @@ if (!$prescan) {
     require LaTeXML::Post::MakeBibliography;
     push(@procs, LaTeXML::Post::MakeBibliography->new(db => $DB, bibliographies => [@bibliographies],
         split => $splitbibliography, scanner => $scanner,
+        parseauxfile => $parseauxfile,
         %OPTIONS)); }
   if ($crossref) {
     require LaTeXML::Post::CrossRef;
@@ -361,6 +363,7 @@ if (!$prescan) {
         extension => $extension,
         ($numbersections ? (number_sections => 1)       : ()),
         ($navtoc         ? (navigation_toc  => $navtoc) : ()),
+	parseauxfile => $parseauxfile,
         %OPTIONS)); }
 
   if ($picimages) {
@@ -570,6 +573,7 @@ latexmlpost [options] I<xmlfile>
  --splitbibliography     splits the bibliography into pages per
                          initial.
  --nosplitbibliography   disables the above (default)
+ --parseauxfile          use the aux file to sort and format references
  --prescan               carries out only the split (if
                          enabled) and scan, storing
                          cross-referencing data in dbfile
@@ -780,7 +784,7 @@ Specifies how to name the files for subdocuments created by splitting.
 The values C<id> and C<label> simply use the id or label of the subdocument's
 root node for it's filename.  C<idrelative> and C<labelrelative> use
 the portion of the id or label that follows the parent document's
-id or label. Furthermore, to impose structure and uniqueness, 
+id or label. Furthermore, to impose structure and uniqueness,
 if a split document has children that are also split, that document
 (and it's children) will be in a separate subdirectory with the
 name index.
@@ -843,6 +847,11 @@ latexmlpost does not (currently) directly process and format such a bibliography
 
 Enables or disables (default) the splitting of generated bibliographies
 into separate pages per initial letter.
+
+=item C<--parseauxfile>
+
+Tries to parse the .aux file to sort and format bibliographic references.
+Falls back to normal bibliographic handling, if the file is not found.
 
 =item C<--prescan>
 
@@ -955,7 +964,7 @@ specify a graphics file that will be converted to a more appropriate file
 target format; for example, postscript files used for graphics with LaTeX
 will be converted to png format for use on the web.  As with LaTeX,
 when a graphics file is specified without a file type, the system will search
-for the most appropriate target type file. 
+for the most appropriate target type file.
 
 When this option is used, it overrides I<and replaces> the defaults and provides
 a mapping of I<sourcetype> to I<desttype>.  The option can be
