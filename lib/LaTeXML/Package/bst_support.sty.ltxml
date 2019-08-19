@@ -1,0 +1,31 @@
+# -*- mode: Perl -*-
+# /=====================================================================\ #
+# | bst_support                                                         | #
+# | Implementation for LaTeXML                                          | #
+# |=====================================================================| #
+# | Part of LaTeXML:                                                    | #
+# |  Public domain software, produced as part of work done by the       | #
+# |  United States Government & not subject to copyright in the US.     | #
+# |---------------------------------------------------------------------| #
+# | Thanks to the arXMLiv group for initial implementation              | #
+# |    http://arxmliv.kwarc.info/                                       | #
+# | Released to the Public Domain                                       | #
+# |---------------------------------------------------------------------| #
+# | Bruce Miller <bruce.miller@nist.gov>                        #_#     | #
+# | http://dlmf.nist.gov/LaTeXML/                              (o o)    | #
+# \=========================================================ooo==U==ooo=/ #
+package LaTeXML::Package::Pool;
+use strict;
+use warnings;
+use LaTeXML::Package;
+
+# This bit of code supports several bst implementations
+
+$$LaTeXML::Package::Pool::BIBSTYLES{'spmpsci'} = { citestyle => 'numbers', sort => 'true' };
+$$LaTeXML::Package::Pool::BIBSTYLES{'spmpsci-unsort'} = { citestyle => 'numbers', sort => 'false' };
+$$LaTeXML::Package::Pool::BIBSTYLES{'splncs04'} = { citestyle => 'numbers', sort => 'false' };
+$$LaTeXML::Package::Pool::BIBSTYLES{'spbasic'} = { citestyle => 'authoryear', sort => 'true' };
+
+
+1;
+

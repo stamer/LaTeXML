@@ -16,7 +16,7 @@ use warnings;
 use LaTeXML::Package;
 
 # Only if option natbib!
-# RequirePackage('natbib');
+#RequirePackage('natbib', options => ['numbers']); 
 RequirePackage('inst_support');
 RequirePackage('bst_support');
 
