@@ -418,7 +418,7 @@ sub make_bibcite {
     return (); }
 
   if ($$self{parseauxfile}) {
-    Info("Parsing auxfile => setting show to refnum!");
+    NoteProgress(" [make_bibcite: parsing auxfile => setting show to refnum]");
     # ignore any options set by natbib.sty.ltxml, we use the data from aux directly
     $show = 'refnum'; }
 

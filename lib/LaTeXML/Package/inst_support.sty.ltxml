@@ -52,6 +52,8 @@ DefMacro('\@inst{}', '\@add@to@frontmatter{ltx:creator}{\@@@inst{#1}}');
 DefMacro('\inst{}', sub {
     map { (T_CS('\@inst'), T_BEGIN, @$_, T_END) } SplitTokens($_[1], T_OTHER(',')); });
 
+DefConstructor('\orcidID{}', '<ltx:sup>[#1]</ltx:sup>');
+
 Let('\at',      '\and');    # Actually this is different than \and, but...
 Let('\iand',    '\and');
 Let('\nand',    '\and');
@@ -65,6 +67,7 @@ DefMacro('\institute{}',
     . '\let\email\@in@inst@email\@new@institute#1\@end@institute\egroup');
 DefMacro('\institute@and', '\@end@institute\stepcounter{inst}\@new@institute');
 DefMacro('\@new@institute XUntil:\@end@institute', '\if.#1.\else\@add@institute{#1}\fi');
+Let('\@end@institute', '\relax'); # stub
 
 #should play similar game as with institute, relocate?
 DefMacro('\emailname', 'E-mail');
@@ -78,6 +81,7 @@ DefConstructor('\@add@institute {}',
   "<ltx:note role='institutetext' mark='#mark'>#1</ltx:note>",
   bounded => 1, beforeDigest => sub { AssignValue(inPreamble => 0); },
   properties => sub { (mark => ToString(Expand(T_CS('\theinst')))); });
+
 
 # Reconnecting the institute to the appropriate author:
 # [Handling is similar to reconnecting footnotemark & footnotetext]

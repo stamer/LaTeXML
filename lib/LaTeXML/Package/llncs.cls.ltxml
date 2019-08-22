@@ -28,6 +28,7 @@ LoadClass('article');
 
 RequirePackage('multicol');
 RequirePackage('inst_support');
+RequirePackage('bst_support');
 
 #======================================================================
 DefMacro('\frontmatter', Tokens());

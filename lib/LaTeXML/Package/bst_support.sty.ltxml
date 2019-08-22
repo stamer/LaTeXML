@@ -24,6 +24,7 @@ use LaTeXML::Package;
 $$LaTeXML::Package::Pool::BIBSTYLES{'spmpsci'} = { citestyle => 'numbers', sort => 'true' };
 $$LaTeXML::Package::Pool::BIBSTYLES{'spmpsci-unsort'} = { citestyle => 'numbers', sort => 'false' };
 $$LaTeXML::Package::Pool::BIBSTYLES{'splncs04'} = { citestyle => 'numbers', sort => 'false' };
+$$LaTeXML::Package::Pool::BIBSTYLES{'splncs04-unsrt'} = { citestyle => 'numbers', sort => 'false' };
 $$LaTeXML::Package::Pool::BIBSTYLES{'spbasic'} = { citestyle => 'authoryear', sort => 'true' };
 
 

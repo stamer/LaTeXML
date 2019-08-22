@@ -79,13 +79,9 @@ sub process {
     local %LaTeXML::Post::MakeBibliography::STYLE =
       (map { ($_ => $bib->getAttribute($_)) } qw(bibstyle citestyle sort));
 
-    NoteProgress("bibstyle: ".$LaTeXML::Post::MakeBibliography::STYLE{bibstyle}."\n");
-    NoteProgress("citestyle: ".$LaTeXML::Post::MakeBibliography::STYLE{citestyle}."\n");
-    NoteProgress("sort     : ".$LaTeXML::Post::MakeBibliography::STYLE{sort}."\n");
-
     my %auxRefs = ();
     if ($$self{parseauxfile}) {
-      Info("Sorting and formatting entries according to aux file.");
+      NoteProgress(" [sorting and formatting entries according to aux file.]");
       %auxRefs = $self->parseAuxFile($doc);
       if (!keys %auxRefs) {
         Info("Could not parse .aux file, falling back to auto-numbering"); } }
