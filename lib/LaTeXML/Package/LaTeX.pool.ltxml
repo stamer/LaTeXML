@@ -153,7 +153,7 @@ DefMacro('\begin{}', sub {
         $STATE->noteStatus(undefined => $undef);
         Error('undefined', $undef, $gullet, "The environment " . $undef . " is not defined.");
         $STATE->installDefinition(LaTeXML::Core::Definition::Constructor->new($token, undef,
-            sub { LaTeXML::Core::Stomach::makeError($_[0], 'undefined', $undef); })); }
+            sub { $_[0]->makeError('undefined', $undef); })); }
       (($before ? @$before : ()),
         T_CS('\begingroup'),
         ($after ? @$after : ()),
@@ -751,6 +751,10 @@ DefMacroI('\@pkgextension', undef, 'sty');
 Let('\@currext',          '\@empty');
 Let('\@currname',         '\@empty');
 Let('\@classoptionslist', '\relax');
+# Note that there are variables used in Package.pmfor these,
+# but they are NOT tied to these macros. Do they need to be?
+DefMacroI('\@declaredoptions', undef, undef);
+DefMacroI('\@curroptions',     undef, undef);
 
 DefConstructor('\usepackage OptionalSemiverbatim Semiverbatim []',
   "<?latexml package='#2' ?#1(options='#1')?>",
@@ -3348,6 +3352,7 @@ DefPrimitive('\@array@bindings [] AlignmentTemplate', sub {
     if ($str != 1) {
       $$attr{rowsep} = Dimension(($str - 1) . 'em'); }
     alignmentBindings($template, 'math', attributes => $attr);
+    MergeFont(mathstyle => 'text');
     return; });
 
 DefMacro('\array[]{}',

@@ -309,12 +309,12 @@ sub XEquals {
   my $def1 = LookupMeaning($token1);    # token, definition object or undef
   my $def2 = LookupMeaning($token2);    # ditto
   if (defined $def1 != defined $def2) { # False, if only one has 'meaning'
-    return; }
+    return 0; }
   elsif (!defined $def1 && !defined $def2) {    # true if both undefined
     return 1; }
   elsif ($def1->equals($def2)) {                # If both have defns, must be same defn!
     return 1; }
-  return; }
+  return 0; }
 
 # Is defined in the LaTeX-y sense of also not being let to \relax.
 sub IsDefined {
@@ -375,7 +375,8 @@ sub Let {
   # If strings are given, assume CS tokens (most common case)
   $token1 = T_CS($token1) unless ref $token1;
   $token2 = T_CS($token2) unless ref $token2;
-  $STATE->assignMeaning($token1, $STATE->lookupMeaning($token2), $scope);
+  $STATE->assignMeaning($token1,
+    ($token2->get_dont_expand ? $token2 : $STATE->lookupMeaning($token2)), $scope);
   AfterAssignment();
   return; }
 
@@ -805,10 +806,7 @@ sub Invocation {
     my $params = $defn->getParameters;
     return Tokens($token, ($params ? $params->revertArguments(@args) : ())); }
   else {
-    Error('undefined', $token, undef,
-      "Can't invoke " . Stringify($token) . "; it is undefined");
-    DefConstructorI($token, convertLaTeXArgs(scalar(@args), 0),
-      sub { LaTeXML::Core::Stomach::makeError($_[0], 'undefined', $token); });
+    $STATE->generateErrorStub(undef, $token, convertLaTeXArgs(scalar(@args), 0));
     return Tokens($token, map { (T_BEGIN, $_->unlist, T_END) } @args); } }
 
 sub RawTeX {
@@ -1091,7 +1089,7 @@ sub DefPrimitiveI {
   return; }
 
 my $register_options = {    # [CONSTANT]
-  readonly => 1, getter => 1, setter => 1 };
+  readonly => 1, getter => 1, setter => 1, name => 1 };
 my %register_types = (      # [CONSTANT]
   'LaTeXML::Common::Number'    => 'Number',
   'LaTeXML::Common::Dimension' => 'Dimension',
@@ -1112,7 +1110,7 @@ sub DefRegisterI {
   $cs = coerceCS($cs);
 ###  $paramlist = parseParameters($paramlist, $cs) if defined $paramlist && !ref $paramlist;
   my $type   = $register_types{ ref $value };
-  my $name   = ToString($cs);
+  my $name   = ToString($options{name} || $cs);
   my $getter = $options{getter}
     || sub { LookupValue(join('', $name, map { ToString($_) } @_)) || $value; };
   my $setter = $options{setter}
@@ -1125,6 +1123,7 @@ sub DefRegisterI {
   # Not really right to set the value!
   AssignValue(ToString($cs) => $value) if defined $value;
   $STATE->installDefinition(LaTeXML::Core::Definition::Register->new($cs, $paramlist,
+      replacement  => $name,
       registerType => $type,
       getter       => $getter, setter => $setter,
       readonly     => $options{readonly}),
@@ -1388,19 +1387,22 @@ sub DefMathI {
   if (length($csname) == 1) {
     defmath_rewrite($cs, %options); }
 
-  # If the presentation is complex, and involves arguments,
-  # we will create an XMDual to separate content & presentation.
+  # If the macro involves arguments,
+  # we will create an XMDual to separate simple content application
+  # from the (likely) convoluted presentation.
   elsif ((ref $presentation eq 'CODE')
     || ((ref $presentation) && grep { $_->equals(T_PARAM) } $presentation->unlist)
-    || (!(ref $presentation) && ($presentation =~ /\#\d|\\./))
-    || ((ref $presentation) && (grep { $_->isExecutable } $presentation->unlist))) {
+    || (!(ref $presentation) && ($presentation =~ /\#\d|\\./))) {
     defmath_dual($cs, $paramlist, $presentation, %options); }
+  # If no arguments, but the presentation involves macros, presumably with internal structure,
+  # we'll wrap the presentation in ordet to capture the various semantic attributes
+  elsif ((ref $presentation) && (grep { $_->isExecutable } $presentation->unlist)) {
+    defmath_wrapped($cs, $presentation, %options); }
 
   # EXPERIMENT: Introduce an intermediate case for simple symbols
   # Define a primitive that will create a Box with the appropriate set of XMTok attributes.
   elsif (($nargs == 0) && !grep { !$$simpletoken_options{$_} } keys %options) {
     defmath_prim($cs, $paramlist, $presentation, %options); }
-
   else {
     defmath_cons($cs, $paramlist, $presentation, %options); }
   AssignValue($csname . ":locked" => 1) if $options{locked};
@@ -1507,6 +1509,32 @@ sub defmath_dual {
             ($options{reorder} ? @{ $options{reorder} } : (1 .. $nargs)))
           . "</ltx:XMApp>"),
       defmath_common_constructor_options($cs, $presentation, %options)), $options{scope});
+  return; }
+
+# The case where there are NO arguments, but the presentation is (potentially) complex.
+sub defmath_wrapped {
+  my ($cs, $presentation, %options) = @_;
+  my $csname  = $cs->getString;
+  my $wrap_cs = T_CS($csname . "\@wrapper");
+  my $pres_cs = T_CS($csname . "\@presentation");
+  # Make the original CS expand into a wrapper constructor invoking a presentation
+  $STATE->installDefinition(LaTeXML::Core::Definition::Expandable->new($cs, undef,
+      Tokens($wrap_cs, T_BEGIN, $pres_cs, T_END)),
+    $options{scope});
+  # Make the presentation macro.
+  $presentation = TokenizeInternal($presentation) unless ref $presentation;
+  $STATE->installDefinition(LaTeXML::Core::Definition::Expandable->new($pres_cs, undef, $presentation),
+    $options{scope});
+  # Make the wrapper constructor
+  my $cons_attr = "name='#name' meaning='#meaning' omcd='#omcd' mathstyle='#mathstyle'";
+  $STATE->installDefinition(LaTeXML::Core::Definition::Constructor->new($wrap_cs,
+      parseParameters('{}', $csname),
+      "<ltx:XMWrap $cons_attr role='#role' scriptpos='#scriptpos' stretchy='#stretchy'>"
+        . "#1"
+        . "</ltx:XMWrap>",
+      defmath_common_constructor_options($cs, $presentation, %options),
+      reversion => sub { (($LaTeXML::DUAL_BRANCH || '') eq 'content' ? $cs : Revert($_[1])); }),
+    $options{scope});
   return; }
 
 sub defmath_prim {

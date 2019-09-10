@@ -731,8 +731,19 @@ DefConditionalI('\ifinner', undef, sub { 0; });
 
 DefConditionalI('\ifmmode', undef, sub { LookupValue('IN_MATH'); });
 
-DefConditional('\if XToken XToken',    sub { $_[1]->getCharcode == $_[2]->getCharcode; });
-DefConditional('\ifcat XToken XToken', sub { $_[1]->getCatcode == $_[2]->getCatcode; });
+DefParameterType('ExpandedIfToken', sub {
+    my ($gullet) = @_;
+    my $token = $gullet->readXToken(0);
+    if ($$token[2]) {    # marked dont_expand
+      if ($$token[2][1] == CC_ACTIVE) {    # treat as active character, if originally such
+        return $$token[2]; }
+      else {                               # otherwise, treat as relax for comparisons
+        return T_CS('\relax'); } }
+    else {                                 # normal case, treat token as-is
+      return $token; } });
+
+DefConditional('\if ExpandedIfToken ExpandedIfToken', sub { $_[1]->getCharcode == $_[2]->getCharcode; });
+DefConditional('\ifcat ExpandedIfToken ExpandedIfToken', sub { $_[1]->getCatcode == $_[2]->getCatcode; });
 
 DefConditional('\ifx Token Token', sub { XEquals($_[1], $_[2]); });
 
@@ -901,20 +912,21 @@ DefMacro('\expandafter Token Token', sub {
       {
         local $LaTeXML::CURRENT_TOKEN = $xtok;
         local $LaTeXML::NOEXPAND_THE  = undef;
-        my $x = $defn->invoke($gullet);
+        my $x = $defn->invoke($gullet, 1);
         @x = @$x if $x;    # Expand $xtok ONCE ONLY!
       }
       ($tok, @x); }
     elsif (!$STATE->lookupMeaning($xtok)) {
-      # Undefined token is an error, as expansion is expected. The unknown token is consumed.
-      # see TeX B book, item 367.
-      Error('undefined', $xtok, $gullet, "The token " . Stringify($xtok) . " is not defined");
-      ($tok); }
+      # Undefined token is an error, as expansion is expected.
+      # BUT The unknown token is NOT consumed, (see TeX B book, item 367)
+      # since probably in a real TeX run it would have been defined.
+      $STATE->generateErrorStub($gullet, $xtok);
+      ($tok, $xtok); }
     else {
       ($tok, $xtok); } });
 
-# Insert magic token that Gullet knows not to expand the next one.
-DefMacroI('\noexpand', undef, Token('', CC_NOTEXPANDED));
+# Replace the next token with it's not-expanded variant
+DefMacro('\noexpand Token', sub { $_[1]->with_dont_expand; });
 
 DefMacroI('\topmark',        undef, Tokens());
 DefMacroI('\firstmark',      undef, Tokens());
@@ -1304,47 +1316,37 @@ DefMacro('\futurelet Token Token Token', sub {
 #    | <registerdef><control sequence><equals><8bit>
 # <registerdef> = \countdef | \dimendef | \skipdef | \muskipdef | toksdef
 
+# Note that before \countdef, \dimendef, \skipdef, \muskipdef, \chardef, \mathchardef, \toksdef
+# read the <number>, they let the token to \relax in case the def is immediately followed
+# by a use or assignment;  See TeX Program \s 1224
 # See below for \chardef & \mathchardef
 
-DefPrimitive('\countdef Token SkipMatch:= Number', sub {
-    my ($stomach, $cs, $num) = @_;
-    my $count = '\count' . $num->valueOf;
-    DefRegisterI($cs, undef, Number(0),
-      getter => sub { LookupValue($count) || Number(0); },
-      setter => sub { AssignValue($count => $_[0]); });
-    AfterAssignment(); });
+sub shorthandDef {
+  my ($stomach, $cs, $type, $init) = @_;
+  Let($cs, '\relax');
+  my $num = $stomach->getGullet->readNumber();
+  my $reg = $type . $num->valueOf;
+  DefRegisterI($cs, undef, $init,
+    name   => $reg,
+    getter => sub { LookupValue($reg) || $init; },
+    setter => sub { AssignValue($reg => $_[0]); });
+  AfterAssignment();
+  return; }
 
-DefPrimitive('\dimendef Token SkipMatch:= Number', sub {
-    my ($stomach, $cs, $num) = @_;
-    my $dimen = '\dimen' . $num->valueOf;
-    DefRegisterI($cs, undef, Dimension(0),
-      getter => sub { LookupValue($dimen) || Dimension(0); },
-      setter => sub { AssignValue($dimen => $_[0]); });
-    AfterAssignment(); });
+DefPrimitive('\countdef Token SkipMatch:=', sub {
+    shorthandDef($_[0], $_[1], '\count', Number(0)); });
 
-DefPrimitive('\skipdef Token SkipMatch:= Number', sub {
-    my ($stomach, $cs, $num) = @_;
-    my $glue = '\skip' . $num->valueOf;
-    DefRegisterI($cs, undef, Glue(0),
-      getter => sub { LookupValue($glue) || Glue(0); },
-      setter => sub { AssignValue($glue => $_[0]); });
-    AfterAssignment(); });
+DefPrimitive('\dimendef Token SkipMatch:=', sub {
+    shorthandDef($_[0], $_[1], '\dimen', Dimension(0)); });
 
-DefPrimitive('\muskipdef Token SkipMatch:= Number', sub {
-    my ($stomach, $cs, $num) = @_;
-    my $muglue = '\muskip' . $num->valueOf;
-    DefRegisterI($cs, undef, MuGlue(0),
-      getter => sub { LookupValue($muglue) || MuGlue(0); },
-      setter => sub { AssignValue($muglue => $_[0]); });
-    AfterAssignment(); });
+DefPrimitive('\skipdef Token SkipMatch:=', sub {
+    shorthandDef($_[0], $_[1], '\skip', Glue(0)); });
 
-DefPrimitive('\toksdef Token SkipMatch:= Number', sub {
-    my ($stomach, $cs, $num) = @_;
-    my $toks = '\toks' . $num->valueOf;
-    DefRegisterI($cs, undef, Tokens(),
-      getter => sub { LookupValue($toks) || Tokens(); },
-      setter => sub { AssignValue($toks => $_[0]); });
-    AfterAssignment(); });
+DefPrimitive('\muskipdef Token SkipMatch:=', sub {
+    shorthandDef($_[0], $_[1], '\muskip', MuGlue(0)); });
+
+DefPrimitive('\toksdef Token SkipMatch:=', sub {
+    shorthandDef($_[0], $_[1], '\toks', Tokens()); });
 
 # NOTE: Get all these handled as registers
 # <internal integer> = <integer parameter> | <special integer> | \lastpenalty
@@ -1709,9 +1711,12 @@ DeclareFontMap('OMX',
 DefPrimitive('\char Number', sub {
     Box(FontDecode($_[1]->valueOf), undef, undef, Invocation(T_CS('\char'), $_[1])); });
 
-# Almost like a register, but different...
-DefPrimitive('\chardef Token SkipMatch:= Number', sub {
-    my ($stomach, $newcs, $value) = @_;
+# Almost like a register (and \countdef), but different...
+# (including the preassignment to \relax!)
+DefPrimitive('\chardef Token SkipMatch:=', sub {
+    my ($stomach, $newcs) = @_;
+    Let($newcs, '\relax');
+    my $value      = $stomach->getGullet->readNumber();
     my $csname     = $newcs->getCSName;
     my $internalcs = T_CS('\@chardef@' . $csname);
     DefPrimitiveI($internalcs, undef, sub {
@@ -1752,8 +1757,10 @@ DefConstructor('\mathchar Number',
     return; });
 
 # Almost like a register, but different...
-DefPrimitive('\mathchardef Token SkipMatch:= Number', sub {
-    my ($stomach, $newcs, $value) = @_;
+DefPrimitive('\mathchardef Token SkipMatch:=', sub {
+    my ($stomach, $newcs) = @_;
+    Let($newcs, '\relax');
+    my $value  = $stomach->getGullet->readNumber();
     my $csname = $newcs->getCSName;
     my ($role, $glyph) = decodeMathChar($value->valueOf);
     my $internalcs = $glyph && T_CS('\@mathchardef@' . $csname);
@@ -2172,12 +2179,20 @@ DefPrimitive('\lowercase GeneralText', sub {
     $stomach->getGullet->unread(map { lcToken($_) } $tokens->unlist);
     return; });
 
+# Converts $tokens to a string in the fashion of \message and others:
+# doubles #, converts to string; optionally adds spaces after control sequences
+sub writableTokens {
+  my ($tokens, $addspaces) = @_;
+  my @tokens = $tokens->unlist;
+  if ($addspaces) {
+    @tokens = map { $_->getCatcode == CC_CS ? ($_, T_SPACE) : $_ } @tokens; }
+  @tokens = map { $_->getCatcode == CC_PARAM ? ($_, $_) : $_ } @tokens;
+  return UnTeX(Tokens(@tokens)); }
+
 DefPrimitive('\message{}', sub {
     my ($stomach, $stuff) = @_;
     return unless LookupValue('VERBOSITY') > -1;
-    # Expand, and insert spaces after CS tokens
-    my @tokens = map { $_->getCatcode == CC_CS ? ($_, T_SPACE) : $_ } Expand($stuff)->unlist;
-    print STDERR ToString(Tokens(@tokens)) . "\n";
+    print STDERR writableTokens(Expand($stuff), 1);
     return; });
 
 DefRegister('\errhelp' => Tokens());
@@ -2260,7 +2275,7 @@ DefPrimitive('\write Number {}', sub {
       my $handle   = $filename . '_contents';
       my $contents = LookupValue($handle);
       AssignValue($handle => $contents . UnTeX(Expand($tokens)) . "\n", 'global'); }
-    else {
+    elsif (LookupValue('VERBOSITY') > -1) {
       print STDERR UnTeX(Expand($tokens)) . "\n"; }
     return; });
 
@@ -6864,36 +6879,8 @@ sub andSplit {
 sub orNull {
   return (grep { defined } @_) ? @_ : undef; }
 
-# Should be a general utility?
-sub stripBraces {
-  my ($tokens) = @_;
-  my @tokens = ($tokens ? $tokens->unlist : ());
-  my @t      = ();
-  while (@tokens && ($tokens[0]->getCatcode == CC_SPACE)) {    # Skip leading whitespace
-    shift(@tokens); }
-  # Balanced tokens until $delim
-  my $ntopbraces = 0;
-  while (@tokens) {
-    if (Equals($tokens[0], T_BEGIN)) {                         # If top-level brace
-      $ntopbraces++;
-      my ($level, $t) = (0, undef);
-      while (defined($t = shift(@tokens))) {                   # Read balanced
-        my $cc = $t->getCatcode;
-        $level++ if $cc == CC_BEGIN;
-        $level-- if $cc == CC_END;
-        push(@t, $t);
-        last unless $level; } }
-    else {
-      push(@t, shift(@tokens)); } }
-  while (@t && ($t[-1]->getCatcode == CC_SPACE)) {             # pop off trailing spaces
-    pop(@t); }
-  # Strip outer braces if a single set encloses entire value and not just {}
-  if ($ntopbraces == 1) {
-    shift(@t); pop(@t); }
-  return Tokens(@t); }
-
 #**********************************************************************
 LoadPool('eTeX');      # unless.... ?
 LoadPool('pdfTeX');    # unless.... ?
-                       #**********************************************************************
+#**********************************************************************
 1;
